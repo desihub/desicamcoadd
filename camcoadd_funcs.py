@@ -23,6 +23,8 @@ from redrock import targets
 from redrock import zscan
 from desispec import coaddition
 from prospect import viewer
+import desigal.specutils
+
 
 def compute_resolution_sigma(spec_struc):
     """Function to compute wavelength-dependent "sigma" of line-spread function,
@@ -54,7 +56,7 @@ def compute_resolution_sigma(spec_struc):
     rsigma *= dwave # using numpy broadcasting
     return rsigma
 
-def desi_camcoadd_healpix(inputdir, outputdir):
+def desi_camcoadd_healpix(inputdir, outputdir, specprod):
     """Function to coadd DESI healpix-format spectra across cameras.
     Finds input files in inputdir and writes output files to outputdir.
     Returns filename (with dirpath) of the written-out file.
@@ -82,9 +84,14 @@ def desi_camcoadd_healpix(inputdir, outputdir):
         rsigma = compute_resolution_sigma(spec_struc_2)
         # Generate model:
         wavemodel, fluxmodel = viewer.create_model(spec_struc_2, zstruc)
+        
+        # Generate "equivalent Sky"
+        sky_flux, sky_mask = desigal.specutils.get_sky(spectra, release=specprod, n_workers=1)
+        
         # Append model (& eventually other stuff) to new structure using "extra" field:
         spec_struc_2.extra = {spec_struc_2.bands[0]: {'model': fluxmodel.copy(),
-                                                      'sky': 0.*fluxmodel, # placeholder for sky
+                                                      'sky': sky_flux.copy(),
+                                                      'sky_mask': sky_mask.copy(),
                                                       'wavedisp': rsigma}}
         # Write out to file:
         os.makedirs(outputdir, exist_ok=True)
@@ -93,3 +100,4 @@ def desi_camcoadd_healpix(inputdir, outputdir):
     else:
         print('Missing an input file')
         return 0
+

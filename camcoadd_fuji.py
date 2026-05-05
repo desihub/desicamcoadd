@@ -31,7 +31,8 @@ desi_spectro_redux='/global/cfs/cdirs/desi/spectro/redux'
 specprod='fuji'
 
 # Set the output directory:
-outdir = '/global/cfs/cdirs/desi/science/gqp/camcoadd/' + specprod
+# outdir = '/global/cfs/cdirs/desi/science/gqp/camcoadd/' + specprod
+outdir = '/global/cfs/cdirs/desi/users/bid13/camcoadd/' + specprod
 
 # Construct the top-level healpix data directory:
 #topdir = os.getenv("DESI_SPECTRO_REDUX") + "/" + os.getenv("SPECPROD") + '/healpix'
@@ -60,7 +61,8 @@ ndir = len(healdir_list)
 
 print('Found ', ndir, ' input directories')
 
-for i in range(ndir):
-#for i in range(3):
+#for i in range(ndir):
+for i in range(3):
         print(i, healdir_list[i])
-        this_ofile = ccf.desi_camcoadd_healpix(healdir_list[i], healout_list[i])
+        this_ofile = ccf.desi_camcoadd_healpix(healdir_list[i], healout_list[i], specprod=specprod)
+
