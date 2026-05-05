@@ -4,12 +4,14 @@ Scripts to automate coaddition of DESI spectra across cameras.
 
 ## Operation
 
-This script will loop over all healpix in a specprod (*e.g.* `fuji`)
-and produce `camcoadd` files.
+The notebook `dr1_camcoadd_setup.ipynb` loops over all healpix in a specprod
+(*e.g.* `iron`) and sets up a series of batch jobs to create the `camcoadd` files.
 
-```shell
-$ python camcoadd_fuji.py
-```
+The batch jobs were executed on a perlmutter exclusive node, presumably in
+interactive mode. Additional details are in the notebook.
+
+After completion of the batch jobs, the notebook can be used for quality
+assurance.
 
 ## Warnings
 
@@ -25,6 +27,14 @@ For details see the `LICENSE.md` file.
 
 ## Change Log
 
+### 1.0.0 (iron; DESI DR1; c. 2025-04-18; tagged 2026-05-05)
+
+This is the version used to generate the `camcoadd` files for `iron`.
+
+For `iron` the notebook `dr1_camcoadd_setup.ipynb` replaces `camcoadd_fuji.py`.
+The file `camcoadd_funcs.py` was reverted to the original `fuji`/`0.1.0` version,
+*i.e.* without the skymodel test modifications.
+
 ### 0.1.1 (skymodel test; c. 2022-09-19; tagged 2026-05-05)
 
 This version represents an early attempt to add coadded sky spectra. This
@@ -34,4 +44,4 @@ the test was not successful.
 
 ### 0.1.0 (fuji; DESI EDR; c. 2022-06-07; tagged 2026-05-05)
 
-Version used to generate the `camcoadd` files for `fuji`.
+This is the version used to generate the `camcoadd` files for `fuji`.
