@@ -73,9 +73,16 @@ def desi_camcoadd_healpix(inputdir, outputdir):
     # rfile = inputdir + "/" + "rrdetails-" + fn_string + ".h5" # may need in future
     # Test for existence of input files:
     if (os.path.exists(cfile) and os.path.exists(zfile)):
+        ## Adding time calculation - RP
+        start_time = time.time()
         # Get spectrum & redshift structures:
         spec_struc = desispec.io.read_spectra(cfile)
         zstruc = fits.getdata(zfile,1)
+
+        ## Adding time calculation - RP
+        step1_time = time.time()
+        print ('Time for reading files: ', round(step1_time - start_time), 'seconds')
+        
         # Coadd across cameras:
         spec_struc_2 = coaddition.coadd_cameras(spec_struc)
         # Compute approximating LSF sigma:
@@ -86,9 +93,19 @@ def desi_camcoadd_healpix(inputdir, outputdir):
         spec_struc_2.extra = {spec_struc_2.bands[0]: {'model': fluxmodel.copy(),
                                                       'sky': 0.*fluxmodel, # placeholder for sky
                                                       'wavedisp': rsigma}}
+
+        ## Adding time calculation - RP
+        step2_time = time.time()
+        print ('Time for Coadding Spectra: ', round(step2_time - step1_time), 'seconds')
+        
         # Write out to file:
         os.makedirs(outputdir, exist_ok=True)
         desispec.io.write_spectra(ofile, spec_struc_2)
+
+        ## Adding time calculation - RP
+        end_time = time.time()
+        print ('Time for Writing Spectra: ', round(end_time - step2_time), 'seconds')
+        
         return ofile
     else:
         print('Missing an input file')
