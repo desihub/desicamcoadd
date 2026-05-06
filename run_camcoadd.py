@@ -16,7 +16,7 @@ import time
 ## Input Filename
 filename = str(sys.argv[1])
 
-f = open('camcoadd_exec_1.py', 'r')
+f = open(filename, 'r')
 lines = f.readlines()[1:]
 
 in_args = [thisline.split("'")[1] for thisline in lines]
