@@ -50,7 +50,6 @@ def compute_resolution_sigma(spec_struc):
     dwave[1:-1] = 0.5 * (spec_struc.wave['brz'][2:] - spec_struc.wave['brz'][:-2])
     dwave[0] = dwave[1]
     dwave[-1] = dwave[-2]
-    dwave[-10:]
     rsigma *= dwave # using numpy broadcasting
     return rsigma
 
