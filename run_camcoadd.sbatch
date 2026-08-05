@@ -10,8 +10,6 @@
 #SBATCH --array=1-64
 #SBATCH --output=sbatch_files/%x-%a.out
 #SBATCH --error=sbatch_files/%x-%a.err
-#SBATCH --mail-type=begin,end,fail
-#SBATCH --mail-user=dr.raga.pucha@gmail.com
 
 # Ensure subdirectory sbatch_files exist in the same directory as this file
 # Otherwise, run mkdir -p sbatch_files in the terminal from this directory
