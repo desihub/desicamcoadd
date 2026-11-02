@@ -167,7 +167,7 @@ def initialize_input_healpix(batch_file, specprod=None, flavour='healpix'):
     # Convert to survey, program, healpix
     #
     sph = [d.rsplit('/', 4)[1:] for d in healpix_directories]
-    with open(batch_file) as JSON:
+    with open(batch_file, 'w') as JSON:
         json.dump(sph, JSON)
     return len(healpix_directories)
 
