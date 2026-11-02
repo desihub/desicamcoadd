@@ -2,32 +2,35 @@
 # functions for coadding DESI spectra across cameras
 # A. Bolton, Jun 2022
 
-# Imports and setups:
 import os
-import numpy as np
-import healpy as hp
-from glob import glob
-import fitsio
-from collections import defaultdict
-import desispec.io
 import time
-import pandas as pd
-
-import matplotlib.pyplot as plt
-import h5py
-from astropy.table import Table
+import json
+from glob import glob
+import numpy as np
 from astropy.io import fits
-from redrock import templates
-from redrock import rebin
-from redrock import targets
-from redrock import zscan
+# import healpy as hp
+# import fitsio
+# from collections import defaultdict
 from desispec import coaddition
+from desiutil.log import get_logger
+import desispec.io
 from prospect import viewer
 
+
 def compute_resolution_sigma(spec_struc):
-    """Function to compute wavelength-dependent "sigma" of line-spread function,
-    in units of the wavelength baseline
-    !!CURRENTLY ONLY WORKS FOR DATA COADDED ACROSS CAMERAS!! (with 'brz' as the only band)
+    """Compute wavelength-dependent "sigma" of line-spread function, in units of the wavelength baseline.
+
+    **CURRENTLY ONLY WORKS FOR DATA COADDED ACROSS CAMERAS!!** (with 'brz' as the only band)
+
+    Parameters
+    ----------
+    spec_struc : :class:`desispec.spectra.Spectra`
+        A ``Spectra`` container object produced by :func:`~desispec.coaddition.coadd_cameras`.
+
+    Returns
+    -------
+    :class:`numpy.ndarray`
+        An array of wavelength dispersion for each spectral element in `spec_struc`.
     """
     # Get dimensionality of resolution data array:
     nspec, nband, npix = spec_struc.resolution_data['brz'].shape
@@ -50,62 +53,126 @@ def compute_resolution_sigma(spec_struc):
     dwave[1:-1] = 0.5 * (spec_struc.wave['brz'][2:] - spec_struc.wave['brz'][:-2])
     dwave[0] = dwave[1]
     dwave[-1] = dwave[-2]
-    rsigma *= dwave # using numpy broadcasting
+    rsigma *= dwave  # using numpy broadcasting
     return rsigma
 
-def desi_camcoadd_healpix(inputdir, outputdir):
+
+def desi_camcoadd_healpix(survey, program, healpix, output_root):
     """Function to coadd DESI healpix-format spectra across cameras.
-    Finds input files in inputdir and writes output files to outputdir.
-    Returns filename (with dirpath) of the written-out file.
+
+    Parameters
+    ----------
+    survey : :class:`str`
+        The survey name.
+    program : :class:`str`
+        The program name.
+    healpix : :class:`str` or :class:`int`
+        The healpix number.
+    output_root : :class:`str`
+        Write output file(s) to this directory.
+
+    Returns
+    -------
+    :class:`str`
+        Filename (with dirpath) of the written-out file, or ``None`` if one
+        or more input files were missing.
     """
-    # Parse the inputdir into individual survey, program, and healpix strings:
-    hp_string = inputdir.split('/')[-1] # healpix string
-    hs_string = inputdir.split('/')[-2] # healpix substring
-    pr_string = inputdir.split('/')[-3] # program string
-    su_string = inputdir.split('/')[-4] # survey string
-    # Construct filenames for input and output files:
-    fn_string = su_string + "-" + pr_string + "-" + hp_string
-    cfile = inputdir + "/" + "coadd-" + fn_string + ".fits" # input coadd file
-    zfile = inputdir + "/" + "redrock-" + fn_string + ".fits" # input file for redshift mode data
-    ofile = outputdir + "/" + "camcoadd-" + fn_string + '.fits'
-    # sfile = inputdir + "/" + "spectra-" + fn_string + ".fits" # may need in future
-    # rfile = inputdir + "/" + "rrdetails-" + fn_string + ".h5" # may need in future
-    # Test for existence of input files:
-    if (os.path.exists(cfile) and os.path.exists(zfile)):
-        ## Adding time calculation - RP
+    log = get_logger()
+    #
+    # Construct filenames for input and output files
+    #
+    cfile, cfile_ok = desispec.io.findfile('coadd', survey=survey, faprogram=program, healpix=healpix, readonly=True, return_exists=True)
+    zfile, zfile_ok = desispec.io.findfile('redrock', survey=survey, faprogram=program, healpix=healpix, readonly=True, return_exists=True)
+    mfile, mfile_ok = desispec.io.findfile('rrmodel', survey=survey, faprogram=program, healpix=healpix, readonly=True, return_exists=True)
+    ofile = os.path.join(output_root, survey, program, str(int(healpix) // 100), str(healpix), f"camcoadd-{survey}-{program}-{healpix}.fits")
+    if (cfile_ok and (mfile_ok or zfile_ok)):
+        # Adding time calculation - RP
         start_time = time.time()
         # Get spectrum & redshift structures:
         spec_struc = desispec.io.read_spectra(cfile)
-        zstruc = fits.getdata(zfile,1)
 
-        ## Adding time calculation - RP
+        # Adding time calculation - RP
         step1_time = time.time()
-        print ('Time for reading files: ', round(step1_time - start_time), 'seconds')
-        
+        log.info('Time for reading files: %d seconds.', round(step1_time - start_time))
+
         # Coadd across cameras:
         spec_struc_2 = coaddition.coadd_cameras(spec_struc)
         # Compute approximating LSF sigma:
         rsigma = compute_resolution_sigma(spec_struc_2)
         # Generate model:
-        wavemodel, fluxmodel = viewer.create_model(spec_struc_2, zstruc)
+        if mfile_ok:
+            # TO DO
+            fluxmodel = None
+        else:
+            zstruc = fits.getdata(zfile, 1)
+            wavemodel, fluxmodel = viewer.create_model(spec_struc_2, zstruc)
+
         # Append model (& eventually other stuff) to new structure using "extra" field:
         spec_struc_2.extra = {spec_struc_2.bands[0]: {'model': fluxmodel.copy(),
                                                       'sky': 0.*fluxmodel, # placeholder for sky
                                                       'wavedisp': rsigma}}
 
-        ## Adding time calculation - RP
+        # Adding time calculation - RP
         step2_time = time.time()
-        print ('Time for Coadding Spectra: ', round(step2_time - step1_time), 'seconds')
-        
+        log.info('Time for Coadding Spectra: %d seconds.', round(step2_time - step1_time))
+
         # Write out to file:
-        os.makedirs(outputdir, exist_ok=True)
+        log.debug("os.makedirs('%d', exist_ok=True)", os.path.dirname(ofile))
+        os.makedirs(os.path.dirname(ofile), exist_ok=True)
         desispec.io.write_spectra(ofile, spec_struc_2)
 
-        ## Adding time calculation - RP
+        # Adding time calculation - RP
         end_time = time.time()
-        print ('Time for Writing Spectra: ', round(end_time - step2_time), 'seconds')
-        
+        log.info('Time for Writing Spectra: %d seconds,', round(end_time - step2_time))
+
         return ofile
     else:
-        print('Missing an input file')
-        return 0
+        log.error('Missing one or more input files for %s, %s, %s.', survey, program, healpix)
+        return None
+
+
+def initialize_input_healpix(batch_file, specprod=None, flavour='healpix'):
+    """Create a list of input healpix coadds, and organize them into batches.
+
+    Parameters
+    ----------
+    batch_file : :class:`str`
+        Write the input batches to this file.
+    specprod : :class:`str`, optional
+        Name of the specprod. If not defined, use :envvar:`SPECPROD`.
+    flavour : :class:`str`, optional
+        Type of coadd to search for: ``healpix`` for ``iron``, ``loa``, but
+        may change in the future.
+
+    Returns
+    -------
+    :class:`int`
+        The number of input directories found.
+    """
+    if specprod is None:
+        specprod = os.environ['SPECPROD']
+    search_dir = os.path.join(os.environ['DESI_SPECTRO_REDUX'], specprod, flavour)
+    s_p_combos = []
+    for survey in ('cmx', 'special', 'sv1', 'sv2', 'sv3', 'main'):
+        for program in ('backup', 'bright', 'dark', 'other'):
+            if os.path.exists(os.path.join(search_dir, survey, program)):
+                s_p_combos.append((survey, program))
+    #
+    # Find all directories
+    #
+    healpix_directories = []
+    for combo in s_p_combos:
+        healpix_directories += glob(os.path.join(search_dir, combo[0], combo[1], '*', '*'))
+    #
+    # Convert to survey, program, healpix
+    #
+    sph = [d.rsplit('/', 4)[1:] for d in healpix_directories]
+    with open(batch_file) as JSON:
+        json.dump(sph, JSON)
+    return len(healpix_directories)
+
+
+if __name__ == '__main__':
+    import sys
+    os.environ['SPECPROD'] = 'loa'
+    n = initialize_input_healpix(os.path.join(os.environ['SCRATCH'], 'desicamcoadd_loa.json'))
