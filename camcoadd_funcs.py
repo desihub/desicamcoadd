@@ -102,7 +102,31 @@ def desi_camcoadd_healpix(survey, program, healpix, output_root):
         # Generate model:
         if mfile_ok:
             # TO DO
-            fluxmodel = None
+            model_wave = dict()
+            model_flux = dict()
+            with fits.open(mfile) as hdulist:
+                for band in 'BRZ':
+                    model_wave[band.lower()] = hdulist[f"{band}_WAVELENGTH"].data
+                    model_flux[band.lower()] = hdulist[f"{band}_MODEL"].data
+            #
+            # This is adapted from prospect.viewer.create_model.
+            #
+            keep = dict()
+            meanwaves = [np.mean(model_wave[band]) for band in 'brz']  # sort bands by increasing wave
+            sorted_bands = [x for _,x in sorted(zip(meanwaves, 'brz'))]
+            for i_band, band in enumerate(sorted_bands):
+                wavecut_low = 0
+                wavecut_up = 1.e10
+                if i_band > 0:
+                    band_low = sorted_bands[i_band - 1]
+                    wavecut_low = 0.5*(model_wave[band_low][-1] + model_wave[band][0])
+                if i_band < len(sorted_bands) - 1:
+                    band_up = sorted_bands[i_band + 1]
+                    wavecut_up = 0.5*(model_wave[band][-1] + model_wave[band_up][0])
+                keep[band] = (model_wave[band] > wavecut_low) & (model_wave[band] < wavecut_up)
+            wavemodel = np.concatenate([model_wave[band][keep[band]] for band in sorted_bands])
+            fluxmodel = np.concatenate([model_flux[band][:, keep[band]] for band in sorted_bands],
+                                       axis=1)
         else:
             zstruc = fits.getdata(zfile, 1)
             wavemodel, fluxmodel = viewer.create_model(spec_struc_2, zstruc)
@@ -158,21 +182,30 @@ def initialize_input_healpix(batch_file, specprod=None, flavour='healpix'):
             if os.path.exists(os.path.join(search_dir, survey, program)):
                 s_p_combos.append((survey, program))
     #
-    # Find all directories
+    # Find all directories.
     #
     healpix_directories = []
     for combo in s_p_combos:
         healpix_directories += glob(os.path.join(search_dir, combo[0], combo[1], '*', '*'))
     #
-    # Convert to survey, program, healpix
+    # Convert to survey, program, healpix.
     #
     sph = [d.rsplit('/', 4)[1:] for d in healpix_directories]
+    #
+    # Find the number of objects in each coadd.
+    # Then batch up files so that the number of total objects, rather than
+    # the number of files is roughly equal in each batch.
+    # As a first pass though, try just batching by total size.
+    #
     with open(batch_file, 'w') as JSON:
         json.dump(sph, JSON)
     return len(healpix_directories)
+
 
 
 if __name__ == '__main__':
     import sys
     os.environ['SPECPROD'] = 'loa'
     n = initialize_input_healpix(os.path.join(os.environ['SCRATCH'], 'desicamcoadd_loa.json'))
+    print(f"{n:d} found")
+    sys.exit(0)
