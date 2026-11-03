@@ -1,10 +1,18 @@
-# camcoadd_funcs.py
-# functions for coadding DESI spectra across cameras
-# A. Bolton, Jun 2022
+# Licensed under a 3-clause BSD style license - see LICENSE.md.
+"""
+desicamcoadd
+============
 
+Functions for coadding DESI spectra across cameras.
+
+-- A. Bolton, Jun 2022
+-- Substantially revised, B. A. Weaver, Nov 2026
+"""
 import os
+import sys
 import time
 import json
+import argparse
 from glob import glob
 import numpy as np
 from astropy.io import fits
@@ -12,7 +20,7 @@ from astropy.io import fits
 # import fitsio
 # from collections import defaultdict
 from desispec import coaddition
-from desiutil.log import get_logger
+from desiutil.log import get_logger, DEBUG
 import desispec.io
 from prospect import viewer
 
@@ -112,7 +120,7 @@ def desi_camcoadd_healpix(survey, program, healpix, output_root):
             # This is adapted from prospect.viewer.create_model.
             #
             keep = dict()
-            meanwaves = [np.mean(model_wave[band]) for band in 'brz']  # sort bands by increasing wave
+            meanwaves = [np.mean(model_wave[band]) for band in 'brz']  # sort bands by increasing wavelength
             sorted_bands = [x for _,x in sorted(zip(meanwaves, 'brz'))]
             for i_band, band in enumerate(sorted_bands):
                 wavecut_low = 0
@@ -173,6 +181,7 @@ def initialize_input_healpix(batch_file, specprod=None, flavour='healpix'):
     :class:`int`
         The number of input directories found.
     """
+    log = get_logger()
     if specprod is None:
         specprod = os.environ['SPECPROD']
     search_dir = os.path.join(os.environ['DESI_SPECTRO_REDUX'], specprod, flavour)
@@ -186,6 +195,7 @@ def initialize_input_healpix(batch_file, specprod=None, flavour='healpix'):
     #
     healpix_directories = []
     for combo in s_p_combos:
+        log.debug("glob(os.path.join('%s', '%s', '%s' ,'*' , '*'))", search_dir, combo[0], combo[1])
         healpix_directories += glob(os.path.join(search_dir, combo[0], combo[1], '*', '*'))
     #
     # Convert to survey, program, healpix.
@@ -193,7 +203,9 @@ def initialize_input_healpix(batch_file, specprod=None, flavour='healpix'):
     sph = [tuple(d.rsplit('/', 4)[1:]) for d in healpix_directories]
     healpix_sizes = []
     for survey, program, hpxgroup, healpix in sph:
-        cfile, cfile_ok = desispec.io.findfile('coadd', survey=survey, faprogram=program, healpix=healpix, readonly=True, return_exists=True)
+        cfile, cfile_ok = desispec.io.findfile('coadd', survey=survey,
+                                               faprogram=program, healpix=healpix,
+                                               readonly=True, return_exists=True)
         if cfile_ok:
             healpix_sizes.append(os.path.getsize(cfile))
         else:
@@ -209,10 +221,45 @@ def initialize_input_healpix(batch_file, specprod=None, flavour='healpix'):
     return len(healpix_directories)
 
 
+def _options():
+    """Parse command-line options.
+    """
+    prsr = argparse.ArgumentParser()
+    prsr.add_argument('-b', '--batch', action='store', metavar='N', type=int,
+                      help='Process batch N')
+    prsr.add_argument('-i', '--initialize', action='store_true',
+                      help='Find coadd files and split them into batches.')
+    prsr.add_argument('-v', '--verbose', action='store_true',
+                      help='Print extra debugging information.')
+    prsr.add_argument('output', metavar='DIR', help='Write output to DIR.')
+    return prsr.parse_args()
+
+
+def main():
+    """Entry-point for command-line scripts.
+
+    Returns
+    -------
+    :class:`int`
+        An integer suitable for passing to :func:`sys.exit`.
+    """
+    options = _options()
+    if options.verbose:
+        log = get_logger(DEBUG)
+    else:
+        log = get_logger()
+    specprod = os.environ['SPECPROD']
+    if options.initialize:
+        n = initialize_input_healpix(os.path.join(options.output, f'desicamcoadd_{specprod}.json'))
+        log.info("Found %d coadd files.", n)
+    else:
+        if options.batch is None:
+            log.critical('Batch number not specified!')
+            return 1
+        else:
+            log.warning('Processing mode is a work in progress.')
+    return 0
+
 
 if __name__ == '__main__':
-    import sys
-    os.environ['SPECPROD'] = 'loa'
-    n = initialize_input_healpix(os.path.join(os.environ['SCRATCH'], 'desicamcoadd_loa.json'))
-    print(f"{n:d} found")
-    sys.exit(0)
+    sys.exit(main())

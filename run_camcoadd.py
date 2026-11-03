@@ -7,7 +7,7 @@ Version: 2025 April 18
 
 ####################################################################################################
 import sys
-from camcoadd_funcs import desi_camcoadd_healpix
+from desicamcoadd import desi_camcoadd_healpix
 from multiprocessing import Pool
 
 import time
