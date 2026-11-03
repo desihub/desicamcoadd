@@ -200,16 +200,16 @@ def initialize_input_healpix(batch_file, specprod=None, flavour='healpix'):
     #
     # Convert to survey, program, healpix.
     #
-    sph = [tuple(d.rsplit('/', 4)[1:]) for d in healpix_directories]
-    healpix_sizes = []
-    for survey, program, hpxgroup, healpix in sph:
-        cfile, cfile_ok = desispec.io.findfile('coadd', survey=survey,
-                                               faprogram=program, healpix=healpix,
+    healpix_info = dict()
+    for d in healpix_directories:
+        sph = d.rsplit('/', 4)[1:]
+        healpix_info[d] = {'survey': sph[0], 'program': sph[1],
+                           'healpix': int(sph[3]), 'size': 0}
+        cfile, cfile_ok = desispec.io.findfile('coadd', survey=sph[0],
+                                               faprogram=sph[1], healpix=sph[3],
                                                readonly=True, return_exists=True)
         if cfile_ok:
-            healpix_sizes.append(os.path.getsize(cfile))
-        else:
-            healpix_sizes.append(0)
+            healpix_info[d]['size'] = os.path.getsize(cfile)
     #
     # Find the number of objects in each coadd.
     # Then batch up files so that the number of total objects, rather than
@@ -217,14 +217,15 @@ def initialize_input_healpix(batch_file, specprod=None, flavour='healpix'):
     # As a first pass though, try just batching by total size.
     #
     with open(batch_file, 'w') as JSON:
-        json.dump(sph, JSON)
+        json.dump(healpix_info, JSON, indent=2)
     return len(healpix_directories)
 
 
 def _options():
     """Parse command-line options.
     """
-    prsr = argparse.ArgumentParser()
+    prsr = argparse.ArgumentParser(description="Prepare or process coadds-across-cameras",
+                                   prog=os.path.basename(sys.argv[0]))
     prsr.add_argument('-b', '--batch', action='store', metavar='N', type=int,
                       help='Process batch N')
     prsr.add_argument('-i', '--initialize', action='store_true',
