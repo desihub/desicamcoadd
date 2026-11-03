@@ -190,7 +190,14 @@ def initialize_input_healpix(batch_file, specprod=None, flavour='healpix'):
     #
     # Convert to survey, program, healpix.
     #
-    sph = [d.rsplit('/', 4)[1:] for d in healpix_directories]
+    sph = [tuple(d.rsplit('/', 4)[1:]) for d in healpix_directories]
+    healpix_sizes = []
+    for survey, program, hpxgroup, healpix in sph:
+        cfile, cfile_ok = desispec.io.findfile('coadd', survey=survey, faprogram=program, healpix=healpix, readonly=True, return_exists=True)
+        if cfile_ok:
+            healpix_sizes.append(os.path.getsize(cfile))
+        else:
+            healpix_sizes.append(0)
     #
     # Find the number of objects in each coadd.
     # Then batch up files so that the number of total objects, rather than
