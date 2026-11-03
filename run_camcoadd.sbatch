@@ -7,15 +7,14 @@
 #SBATCH --qos=regular
 #SBATCH --job-name=desicamcoadd-64
 #SBATCH --array=0-63
-#SBATCH --output=sbatch_files/%x-%a.out
-#SBATCH --error=sbatch_files/%x-%a.err
+#SBATCH --output=/pscratch/sd/b/bweaver/%x-%j-%2a.out
+#SBATCH --error=/pscratch/sd/b/bweaver/%x-%j-%2a.err
 #SBATCH --mail-type=begin,end,fail
-#SBATCH --mail-user=[user_email@email.edu]
-
-# Ensure subdirectory sbatch_files exist in the same directory as this file
-# Otherwise, run mkdir -p sbatch_files in the terminal from this directory
-
-chmod +x ./run_camcoadd.sh
-
-./run_camcoadd.sh ${SLURM_ARRAY_TASK_ID} &
-wait
+#SBATCH --mail-user=[${USER}@nersc.gov]
+source /global/common/software/desi/desi_environment.sh main
+# module swap desispec/0.99.99
+export DESICAMCOADD=${HOME}/Documents/Code/git/desihub/desicamcoadd
+export PYTHONPATH=${DESICAMCOADD}:${PYTHONPATH}
+export SPECPROD=loa
+cd ${DESICAMCOADD}
+srun -N 1 -n 1 python desicamcoadd.py --batch ${SLURM_ARRAY_TASK_ID} --verbose ${SCRATCH}
