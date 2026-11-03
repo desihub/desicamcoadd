@@ -153,7 +153,7 @@ def desi_camcoadd_healpix(survey, program, healpix, output_root):
         log.info('Time for Coadding Spectra: %d seconds.', round(step2_time - step1_time))
 
         # Write out to file:
-        log.debug("os.makedirs('%d', exist_ok=True)", os.path.dirname(ofile))
+        log.debug("os.makedirs('%s', exist_ok=True)", os.path.dirname(ofile))
         os.makedirs(os.path.dirname(ofile), exist_ok=True)
         desispec.io.write_spectra(ofile, spec_struc_2)
 
@@ -385,7 +385,7 @@ def main():
             return 1
         else:
             if not os.path.exists(batch_data):
-                log.critical("Batch input data file (%d) not found!", batch_data)
+                log.critical("Batch input data file (%s) not found!", batch_data)
                 return 1
             process(batch_data, options.batch, n_cores=options.cores)
     return 0
