@@ -13,6 +13,7 @@ import sys
 import time
 import json
 import argparse
+import multiprocessing
 from glob import glob
 import numpy as np
 from astropy.io import fits
@@ -277,6 +278,33 @@ def initialize_input_healpix(batch_file, specprod=None, flavour='healpix'):
     return len(healpix_directories)
 
 
+def process(batch_data, batch_number, n_cores=64):
+    """Pass batch data to ``desi_camcoadd_healpix``.
+
+    Parameters
+    ----------
+    batch_data : :class:`str`
+        JSON batch data file.
+    batch_number : :class:`int`
+        Process this batch.
+    n_cores : :class:`int`, optional.
+        Number of cores.
+    """
+    with open(batch_data) as JSON:
+        json_data = json.load(JSON)
+    this_batch = json_data[batch_number]
+    args = [this_batch]
+    start = time.time()
+    p = multiprocessing.get_context('fork').Pool(processes=n_cores)
+    p.starmap(desi_camcoadd_healpix, args)
+    p.close()
+    p.join()
+    end = time.time()
+    log.info('Time Taken for %d files with %d cores: %f seconds.',
+             len(this_batch), n_cores, round(end-start, 2))
+    return
+
+
 def _options():
     """Parse command-line options.
     """
@@ -307,8 +335,9 @@ def main():
     else:
         log = get_logger()
     specprod = os.environ['SPECPROD']
+    batch_data = os.path.join(options.output, f'desicamcoadd_{specprod}.json')
     if options.initialize:
-        n = initialize_input_healpix(os.path.join(options.output, f'desicamcoadd_{specprod}.json'))
+        n = initialize_input_healpix(batch_data)
         log.info("Found %d coadd files.", n)
         batch_file = initialize_batch_file(options.output, specprod)
         log.info("Wrote batch file: %d.", batch_file)
@@ -317,7 +346,11 @@ def main():
             log.critical('Batch number not specified!')
             return 1
         else:
+            if not os.path.exists(batch_data):
+                log.critical("Batch input data file (%d) not found!", batch_data)
+                return 1
             log.warning('Processing mode is a work in progress.')
+            # process(batch_data, options.batch)
     return 0
 
 
