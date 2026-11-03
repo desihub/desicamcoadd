@@ -25,6 +25,9 @@ import desispec.io
 from prospect import viewer
 
 
+log = None
+
+
 def compute_resolution_sigma(spec_struc):
     """Compute wavelength-dependent "sigma" of line-spread function, in units of the wavelength baseline.
 
@@ -85,7 +88,6 @@ def desi_camcoadd_healpix(survey, program, healpix, output_root):
         Filename (with dirpath) of the written-out file, or ``None`` if one
         or more input files were missing.
     """
-    log = get_logger()
     #
     # Construct filenames for input and output files
     #
@@ -181,7 +183,6 @@ def initialize_input_healpix(batch_file, specprod=None, flavour='healpix'):
     :class:`int`
         The number of input directories found.
     """
-    log = get_logger()
     if specprod is None:
         specprod = os.environ['SPECPROD']
     search_dir = os.path.join(os.environ['DESI_SPECTRO_REDUX'], specprod, flavour)
@@ -244,6 +245,7 @@ def main():
     :class:`int`
         An integer suitable for passing to :func:`sys.exit`.
     """
+    global log
     options = _options()
     if options.verbose:
         log = get_logger(DEBUG)
