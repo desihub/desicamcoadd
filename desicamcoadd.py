@@ -5,8 +5,9 @@ desicamcoadd
 
 Functions for coadding DESI spectra across cameras.
 
--- A. Bolton, Jun 2022
--- Substantially revised, B. A. Weaver, Nov 2026
+* A. Bolton, Jun 2022
+* R. Pucha, Apr 2025
+* Substantially revised, B. A. Weaver, Nov 2026
 """
 import os
 import sys
@@ -167,7 +168,7 @@ def desi_camcoadd_healpix(survey, program, healpix, output_root):
 
 
 def initialize_batch_file(output, specprod, /, account='desi',
-                          cpus=128, walltime='04:00:00', array=64, modules='main'):
+                          cpus=64, walltime='04:00:00', array=64, modules='main'):
     """Create a Slurm batch script.
 
     Parameters
@@ -200,6 +201,7 @@ def initialize_batch_file(output, specprod, /, account='desi',
 #SBATCH --cpus-per-task={cpus:d}
 #SBATCH --time={walltime}
 #SBATCH --constraint=cpu
+#SBATCH --licenses=scratch,cfs
 #SBATCH --qos=regular
 #SBATCH --job-name=desicamcoadd-{specprod}-{array:d}
 #SBATCH --array=0-{ma}
@@ -213,7 +215,7 @@ export DESICAMCOADD=${{HOME}}/Documents/Code/git/desihub/desicamcoadd
 export PYTHONPATH=${{DESICAMCOADD}}:${{PYTHONPATH}}
 export SPECPROD={specprod}
 cd ${{DESICAMCOADD}}
-srun -N 1 -n 1 python desicamcoadd.py --batch ${{SLURM_ARRAY_TASK_ID}} --verbose {output}
+srun -N 1 -n 1 -c {cpus:d} --cpu_bind=cores python desicamcoadd.py --batch ${{SLURM_ARRAY_TASK_ID}} --verbose {output}
 """
     filename = os.path.join(output, f"desicamcoadd-{specprod}-{array:d}.sh")
     with open(filename, 'w') as BATCH:
@@ -221,7 +223,7 @@ srun -N 1 -n 1 python desicamcoadd.py --batch ${{SLURM_ARRAY_TASK_ID}} --verbose
     return filename
 
 
-def initialize_input_healpix(batch_file, specprod=None, flavour='healpix'):
+def initialize_input_healpix(batch_file, specprod=None, flavour='healpix', array=64):
     """Create a list of input healpix coadds, and organize them into batches.
 
     Parameters
@@ -233,6 +235,8 @@ def initialize_input_healpix(batch_file, specprod=None, flavour='healpix'):
     flavour : :class:`str`, optional
         Type of coadd to search for: ``healpix`` for ``iron``, ``loa``, but
         may change in the future.
+    array : :class:`int`, optional
+        Set the job array size.
 
     Returns
     -------
@@ -261,24 +265,53 @@ def initialize_input_healpix(batch_file, specprod=None, flavour='healpix'):
     for d in healpix_directories:
         sph = d.rsplit('/', 4)[1:]
         healpix_info[d] = {'survey': sph[0], 'program': sph[1],
-                           'healpix': int(sph[3]), 'size': 0}
+                           'healpix': int(sph[3]), 'size': 0,
+                           'output': os.path.join(os.path.dirname(batch_file), flavour)}
         cfile, cfile_ok = desispec.io.findfile('coadd', survey=sph[0],
                                                faprogram=sph[1], healpix=sph[3],
                                                readonly=True, return_exists=True)
         if cfile_ok:
             healpix_info[d]['size'] = os.path.getsize(cfile)
     #
+    # Order by size, descending.
+    #
+    ordered_healpix = sorted([healpix_info[k] for k in healpix_info],
+                             key=lambda x: x['size'], reverse=True)
+    #
     # Find the number of objects in each coadd.
     # Then batch up files so that the number of total objects, rather than
     # the number of files is roughly equal in each batch.
     # As a first pass though, try just batching by total size.
     #
+    bins = dict()
+    bin_number = 0
+    for h in ordered_healpix:
+        t = (h['survey'], h['program'], h['healpix'], h['output'], h['size'])
+        if bin_number in bins:
+            bins[bin_number].append(t)
+        else:
+            bins[bin_number] = [t]
+        bin_number += 1
+        if bin_number == array:
+            bin_number = 0
+    #
+    # Convert bins to a pure list.
+    #
+    bins_list = list()
+    for k in range(array):
+        bins_list.append(bins[k])
+    #
+    # Write the batches.
+    #
+    if not os.path.exists(os.path.dirname(batch_file)):
+        log.debug("os.makedirs(os.path.dirname(batch_file))")
+        os.makedirs(os.path.dirname(batch_file))
     with open(batch_file, 'w') as JSON:
-        json.dump(healpix_info, JSON, indent=2)
+        json.dump(bins_list, JSON, indent=2)
     return len(healpix_directories)
 
 
-def process(batch_data, batch_number, n_cores=64):
+def process(batch_data, batch_number, output, n_cores=64, flavour='healpix'):
     """Pass batch data to ``desi_camcoadd_healpix``.
 
     Parameters
@@ -290,10 +323,12 @@ def process(batch_data, batch_number, n_cores=64):
     n_cores : :class:`int`, optional.
         Number of cores.
     """
+    output = os.path.dirname(batch_data)
     with open(batch_data) as JSON:
         json_data = json.load(JSON)
     this_batch = json_data[batch_number]
-    args = [this_batch]
+    args = [tuple(t[0:4]) for t in this_batch]
+    log.debug(args[0])
     start = time.time()
     p = multiprocessing.get_context('fork').Pool(processes=n_cores)
     p.starmap(desi_camcoadd_healpix, args)
@@ -310,8 +345,12 @@ def _options():
     """
     prsr = argparse.ArgumentParser(description="Prepare or process coadds-across-cameras",
                                    prog=os.path.basename(sys.argv[0]))
+    prsr.add_argument('-a', '--array', action='store', metavar='N', type=int, default=64,
+                      help='Create a job array with N jobs (default %(default)s).')
     prsr.add_argument('-b', '--batch', action='store', metavar='N', type=int,
-                      help='Process batch N')
+                      help='Process batch N.')
+    prsr.add_argument('-c', '--cores', action='store', metavar='N', type=int, default=64,
+                      help='Use N cores per array job (default %(default)s).')
     prsr.add_argument('-i', '--initialize', action='store_true',
                       help='Find coadd files and split them into batches.')
     prsr.add_argument('-v', '--verbose', action='store_true',
@@ -335,11 +374,11 @@ def main():
     else:
         log = get_logger()
     specprod = os.environ['SPECPROD']
-    batch_data = os.path.join(options.output, f'desicamcoadd_{specprod}.json')
+    batch_data = os.path.join(options.output, 'desicamcoadd', specprod, f'desicamcoadd_{specprod}.json')
     if options.initialize:
-        n = initialize_input_healpix(batch_data)
+        n = initialize_input_healpix(batch_data, array=options.array)
         log.info("Found %d coadd files.", n)
-        batch_file = initialize_batch_file(options.output, specprod)
+        batch_file = initialize_batch_file(os.path.dirname(batch_data), specprod, array=options.array)
         log.info("Wrote batch file: %d.", batch_file)
     else:
         if options.batch is None:
@@ -349,8 +388,7 @@ def main():
             if not os.path.exists(batch_data):
                 log.critical("Batch input data file (%d) not found!", batch_data)
                 return 1
-            log.warning('Processing mode is a work in progress.')
-            # process(batch_data, options.batch)
+            process(batch_data, options.batch, n_cores=options.cores)
     return 0
 
 
