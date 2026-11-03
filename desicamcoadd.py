@@ -311,7 +311,7 @@ def initialize_input_healpix(batch_file, specprod=None, flavour='healpix', array
     return len(healpix_directories)
 
 
-def process(batch_data, batch_number, output, n_cores=64, flavour='healpix'):
+def process(batch_data, batch_number, n_cores=64):
     """Pass batch data to ``desi_camcoadd_healpix``.
 
     Parameters
@@ -323,7 +323,6 @@ def process(batch_data, batch_number, output, n_cores=64, flavour='healpix'):
     n_cores : :class:`int`, optional.
         Number of cores.
     """
-    output = os.path.dirname(batch_data)
     with open(batch_data) as JSON:
         json_data = json.load(JSON)
     this_batch = json_data[batch_number]
