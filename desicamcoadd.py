@@ -165,6 +165,61 @@ def desi_camcoadd_healpix(survey, program, healpix, output_root):
         return None
 
 
+def initialize_batch_file(output, specprod, /, account='desi',
+                          cpus=128, walltime='04:00:00', array=64, modules='main'):
+    """Create a Slurm batch script.
+
+    Parameters
+    ----------
+    output : :class:`str`
+        The output directory.
+    specprod : :class:`str`
+        The specprod name.
+    account : :class:`str, optional
+        Charge this repo, usually 'desi'.
+    cpus : :class:`int`, optional
+        Number for ``cpus-per-task``.
+    walltime : :class:`str`, optional
+        Wall time.
+    array : :class:`int`, optional
+        Job array size.
+    modules : :class:`str`, optional
+        Version of desimodules to use.
+
+    Returns
+    -------
+    :class:`str`
+        The name of the batch file.
+    """
+    ma = array - 1
+    script = f"""#!/bin/bash
+#SBATCH --account={account}
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task={cpus:d}
+#SBATCH --time={walltime}
+#SBATCH --constraint=cpu
+#SBATCH --qos=regular
+#SBATCH --job-name=desicamcoadd-{specprod}-{array:d}
+#SBATCH --array=0-{ma}
+#SBATCH --output={output}/%x-%j-%2a.out
+#SBATCH --error={output}/%x-%j-%2a.err
+#SBATCH --mail-type=begin,end,fail
+#SBATCH --mail-user={os.environ['USER']}@nersc.gov
+source /global/common/software/desi/desi_environment.sh {modules}
+# module swap desispec/0.99.99
+export DESICAMCOADD=${{HOME}}/Documents/Code/git/desihub/desicamcoadd
+export PYTHONPATH=${{DESICAMCOADD}}:${{PYTHONPATH}}
+export SPECPROD={specprod}
+cd ${{DESICAMCOADD}}
+srun -N 1 -n 1 python desicamcoadd.py --batch ${{SLURM_ARRAY_TASK_ID}} --verbose {output}
+"""
+    filename = os.path.join(output, f"desicamcoadd-{specprod}-{array:d}.sh")
+    with open(filename, 'w') as BATCH:
+        BATCH.write(script)
+    return filename
+
+
 def initialize_input_healpix(batch_file, specprod=None, flavour='healpix'):
     """Create a list of input healpix coadds, and organize them into batches.
 
@@ -255,6 +310,8 @@ def main():
     if options.initialize:
         n = initialize_input_healpix(os.path.join(options.output, f'desicamcoadd_{specprod}.json'))
         log.info("Found %d coadd files.", n)
+        batch_file = initialize_batch_file(options.output, specprod)
+        log.info("Wrote batch file: %d.", batch_file)
     else:
         if options.batch is None:
             log.critical('Batch number not specified!')
