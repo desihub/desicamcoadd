@@ -376,10 +376,10 @@ def main():
     specprod = os.environ['SPECPROD']
     batch_data = os.path.join(options.output, 'desicamcoadd', specprod, f'desicamcoadd_{specprod}.json')
     if options.initialize:
-        n = initialize_input_healpix(batch_data, array=options.array)
-        log.info("Found %d coadd files.", n)
+        # n = initialize_input_healpix(batch_data, array=options.array)
+        # log.info("Found %d coadd files.", n)
         batch_file = initialize_batch_file(os.path.dirname(batch_data), specprod, array=options.array)
-        log.info("Wrote batch file: %d.", batch_file)
+        log.info("Wrote batch file: %s.", batch_file)
     else:
         if options.batch is None:
             log.critical('Batch number not specified!')
