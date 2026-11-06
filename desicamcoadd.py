@@ -125,7 +125,7 @@ def desi_camcoadd_healpix(survey, program, healpix, output_root):
             #
             keep = dict()
             meanwaves = [np.mean(model_wave[band]) for band in 'brz']  # sort bands by increasing wavelength
-            sorted_bands = [x for _,x in sorted(zip(meanwaves, 'brz'))]
+            sorted_bands = [x for _, x in sorted(zip(meanwaves, 'brz'), key=lambda x: x[0])]
             for i_band, band in enumerate(sorted_bands):
                 wavecut_low = 0
                 wavecut_up = 1.e10
