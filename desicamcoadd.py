@@ -17,14 +17,9 @@ import argparse
 import multiprocessing
 from glob import glob
 import numpy as np
-from astropy.io import fits
-# import healpy as hp
-# import fitsio
-# from collections import defaultdict
-from desispec import coaddition
 from desiutil.log import get_logger, DEBUG
+from desispec import coaddition
 import desispec.io
-from prospect import viewer
 
 
 log = None
@@ -93,78 +88,56 @@ def desi_camcoadd_healpix(survey, program, healpix, output_root):
     #
     # Construct filenames for input and output files
     #
-    cfile, cfile_ok = desispec.io.findfile('coadd', survey=survey, faprogram=program, healpix=healpix, readonly=True, return_exists=True)
-    zfile, zfile_ok = desispec.io.findfile('redrock', survey=survey, faprogram=program, healpix=healpix, readonly=True, return_exists=True)
-    mfile, mfile_ok = desispec.io.findfile('rrmodel', survey=survey, faprogram=program, healpix=healpix, readonly=True, return_exists=True)
-    ofile = os.path.join(output_root, survey, program, str(int(healpix) // 100), str(healpix), f"camcoadd-{survey}-{program}-{healpix}.fits")
-    if (cfile_ok and (mfile_ok or zfile_ok)):
-        # Adding time calculation - RP
-        start_time = time.time()
-        # Get spectrum & redshift structures:
-        spec_struc = desispec.io.read_spectra(cfile)
-
-        # Adding time calculation - RP
-        step1_time = time.time()
-        log.info('Time for reading files: %d seconds.', round(step1_time - start_time))
-
-        # Coadd across cameras:
-        spec_struc_2 = coaddition.coadd_cameras(spec_struc)
-        # Compute approximating LSF sigma:
-        rsigma = compute_resolution_sigma(spec_struc_2)
-        # Generate model:
-        if mfile_ok:
-            # TO DO
-            model_wave = dict()
-            model_flux = dict()
-            with fits.open(mfile) as hdulist:
-                for band in 'BRZ':
-                    model_wave[band.lower()] = hdulist[f"{band}_WAVELENGTH"].data
-                    model_flux[band.lower()] = hdulist[f"{band}_MODEL"].data
-            #
-            # This is adapted from prospect.viewer.create_model.
-            #
-            keep = dict()
-            meanwaves = [np.mean(model_wave[band]) for band in 'brz']  # sort bands by increasing wavelength
-            sorted_bands = [x for _, x in sorted(zip(meanwaves, 'brz'), key=lambda x: x[0])]
-            for i_band, band in enumerate(sorted_bands):
-                wavecut_low = 0
-                wavecut_up = 1.e10
-                if i_band > 0:
-                    band_low = sorted_bands[i_band - 1]
-                    wavecut_low = 0.5*(model_wave[band_low][-1] + model_wave[band][0])
-                if i_band < len(sorted_bands) - 1:
-                    band_up = sorted_bands[i_band + 1]
-                    wavecut_up = 0.5*(model_wave[band][-1] + model_wave[band_up][0])
-                keep[band] = (model_wave[band] > wavecut_low) & (model_wave[band] < wavecut_up)
-            wavemodel = np.concatenate([model_wave[band][keep[band]] for band in sorted_bands])
-            fluxmodel = np.concatenate([model_flux[band][:, keep[band]] for band in sorted_bands],
-                                       axis=1)
-        else:
-            zstruc = fits.getdata(zfile, 1)
-            wavemodel, fluxmodel = viewer.create_model(spec_struc_2, zstruc)
-
-        # Append model (& eventually other stuff) to new structure using "extra" field:
-        spec_struc_2.extra = {spec_struc_2.bands[0]: {'model': fluxmodel.copy(),
-                                                      'sky': 0.*fluxmodel, # placeholder for sky
-                                                      'wavedisp': rsigma}}
-
-        # Adding time calculation - RP
-        step2_time = time.time()
-        log.info('Time for Coadding Spectra: %d seconds.', round(step2_time - step1_time))
-
-        # Write out to file:
-        log.debug("os.makedirs('%s', exist_ok=True)", os.path.dirname(ofile))
-        os.makedirs(os.path.dirname(ofile), exist_ok=True)
-        desispec.io.write_spectra(ofile, spec_struc_2)
-
-        # Adding time calculation - RP
-        end_time = time.time()
-        log.info('Time for Writing Spectra: %d seconds,', round(end_time - step2_time))
-
-        return ofile
-    else:
-        log.error('Missing one or more input files for %s, %s, %s.', survey, program, healpix)
+    cfile, cfile_ok = desispec.io.findfile('coadd', survey=survey, faprogram=program,
+                                           healpix=healpix, readonly=True, return_exists=True)
+    ofile = os.path.join(output_root, survey, program, str(int(healpix) // 100),
+                         str(healpix), f"camcoadd-{survey}-{program}-{healpix}.fits")
+    if not cfile_ok:
+        log.error('Missing input "coadd" file for %s, %s, %s.', survey, program, healpix)
         return None
+    #
+    # Adding time calculation - RP
+    #
+    start_time = time.time()
+    #
+    # Get spectrum & redshift structures
+    spec_struc = desispec.io.read_spectra(cfile, return_models=True)
+    #
+    # Adding time calculation - RP
+    #
+    step1_time = time.time()
+    log.info('Time for reading files: %d seconds.', round(step1_time - start_time))
+    #
+    # Coadd across cameras, including the model
+    #
+    spec_struc_2 = coaddition.coadd_cameras(spec_struc)
+    #
+    # Compute approximating LSF sigma
+    #
+    rsigma = compute_resolution_sigma(spec_struc_2)
+    #
+    # Append wave dispersion and (a placeholder for) sky using the .extra attribute.
+    #
+    spec_struc_2.extra = {spec_struc_2.bands[0]: {'sky': np.zeros(spec_struc_2.flux[spec_struc_2.bands[0]].shape,
+                                                                  dtype=spec_struc_2.flux[spec_struc_2.bands[0]].dtype),
+                                                  'wavedisp': rsigma}}
+    #
+    # Adding time calculation - RP
+    #
+    step2_time = time.time()
+    log.info('Time for Coadding Spectra: %d seconds.', round(step2_time - step1_time))
+    #
+    # Write out to file:
+    #
+    log.debug("os.makedirs('%s', exist_ok=True)", os.path.dirname(ofile))
+    os.makedirs(os.path.dirname(ofile), exist_ok=True)
+    desispec.io.write_spectra(ofile, spec_struc_2)
+    #
+    # Adding time calculation - RP
+    #
+    end_time = time.time()
+    log.info('Time for Writing Spectra: %d seconds,', round(end_time - step2_time))
+    return ofile
 
 
 def initialize_batch_file(output, specprod, /, account='desi',
@@ -373,7 +346,8 @@ def main():
     else:
         log = get_logger()
     specprod = os.environ['SPECPROD']
-    batch_data = os.path.join(options.output, 'desicamcoadd', specprod, f'desicamcoadd_{specprod}.json')
+    batch_data = os.path.join(options.output, 'desicamcoadd', specprod,
+                              f'desicamcoadd_{specprod}.json')
     if options.initialize:
         n = initialize_input_healpix(batch_data, array=options.array)
         log.info("Found %d coadd files.", n)
