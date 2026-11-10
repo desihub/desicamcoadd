@@ -256,17 +256,10 @@ def initialize_input_healpix(batch_file, specprod=None, flavour='healpix', array
     # the number of files is roughly equal in each batch.
     # As a first pass though, try just batching by total size.
     #
-    bins = dict()
-    bin_number = 0
-    for h in ordered_healpix:
+    bins = dict([(k, []) for k in range(array)])
+    for i, h in enumerate(ordered_healpix):
         t = (h['survey'], h['program'], h['healpix'], h['output'], h['size'])
-        if bin_number in bins:
-            bins[bin_number].append(t)
-        else:
-            bins[bin_number] = [t]
-        bin_number += 1
-        if bin_number == array:
-            bin_number = 0
+        bins[i % array].append(t)
     #
     # Convert bins to a pure list.
     #
